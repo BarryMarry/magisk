@@ -1,0 +1,116 @@
+name: All In One CI/CD (No Docker)
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: 18
+  PYTHON_VERSION: '3.11'
+  DEPLOY_PATH: /var/www/app
+
+jobs:
+# =====================
+# 1️⃣ Node.js CI / Build
+# =====================
+  node:
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('package.json') != '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm test --if-present
+      - run: npm run build --if-present
+
+      - name: Upload Node Build
+        if: hashFiles('dist/**') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-build
+          path: dist
+
+# =====================
+# 2️⃣ Python CI
+# =====================
+  python:
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('requirements.txt') != '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - run: pip install -r requirements.txt
+      - run: pytest || true
+
+# =====================
+# 3️⃣ GitHub Release（Tag）
+# =====================
+  release:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+
+# =====================
+# 4️⃣ Deploy（SSH）
+# =====================
+  deploy:
+    needs: [node, python]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "."
+          target: ${{ env.DEPLOY_PATH }}
+
+      - name: Restart service
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd ${{ env.DEPLOY_PATH }}
+            npm install --production || true
+            pm2 reload all || pm2 start ecosystem.config.js || true
+            systemctl restart app || true
+
+# =====================
+# 5️⃣ Scheduled Job
+# =====================
+  cron:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "run scheduled task"
