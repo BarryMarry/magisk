@@ -1,0 +1,490 @@
+name: Node.js CI
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build --if-present
+      - run: npm test
+2. Python CI（多版本测试 + lint）
+name: Python CI
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.10, 3.11]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: pytest
+      - run: flake8
+3. Hugo 静态网站部署到 GitHub Pages
+name: Hugo Pages
+on:
+  push:
+    branches:
+      - main
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Hugo
+        uses: peaceiris/actions-hugo@v2
+        with:
+          hugo-version: latest
+          extended: true
+      - name: Build
+        run: hugo --minify
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+4. Docker 镜像构建与推送（GitHub Container Registry）
+name: Docker Build and Push
+on:
+  push:
+    branches:
+      - main
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Docker
+        run: |
+          docker build -t ${{ github.repository }}:${{ github.sha }} .
+          docker push ghcr.io/${{ github.repository }}:$:${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+5. CodeQL 代码安全扫描（每日运行）
+name: CodeQL Scan
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 5 * * *'
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
+6. 定时任务：钉钉消息推送（示例）
+name: DingTalk Notify
+on:
+  schedule:
+    - cron: '0 9 * * *'
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send DingTalk Message
+        uses: timonwong/dingtalk-action@v1
+        with:
+          webhook: ${{ secrets.DINGTALK_WEBHOOK }}
+          type: text
+          content: "今日构建成功提醒"
+7. 阿里云镜像同步（私有仓库）
+name: Sync Docker Image to Aliyun
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Login to Aliyun
+        run: |
+          docker login --username ${{ secrets.ALIYUN_USERNAME }} --password ${{ secrets.ALIYUN_PASSWORD }} registry.cn-hangzhou.aliyuncs.com
+      - name: Pull and Push Image
+        run: |
+          skopeo copy docker://docker.io/nginx:latest docker://registry.cn-hangzhou.aliyuncs.com/my-nginx:v1
+8. 可重用工作流：标准CI（被其他工作流调用）
+# 在 .github/workflows/ci-standard.yml 中定义
+name: Standard CI
+on:
+  workflow_call:
+    inputs:
+      package-manager:
+        type: string
+        required: true
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Environment
+        run: |
+          ${{ inputs.package-manager }} install
+      - name: Test
+        run: |
+          ${{ inputs.package-manager }} test
+      - name: Build
+        run: |
+          ${{ inputs.package-manager }} run build
+9. 调用可重用工作流的示例
+# 在另一个工作流中调用上面的标准CI
+name: My Project CI
+on:
+  push:
+    branches:
+      - main
+jobs:
+  ci:
+    uses: ./.github/workflows/ci-standard.yml@v1
+    with:
+      package-manager: npm
+10. 多环境部署（根据分支名区分）
+name: Multi-Environment Deploy
+on:
+  push:
+    branches:
+      - main
+      - staging
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Environment
+        run: |
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            echo " Deploying to production..."
+# 生产环境部署命令
+          elif [ "$GITHUB_REF" = "refs/heads/staging" ]; then
+            echo " Deploying to staging..."
+# 预发环境部署命令
+          fi
+11. 完整 CI/CD 示例（含lint、测试、部署）
+name: Full CI/CD Pipeline
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - run: npm ci
+      - run: npm run lint
+  test:
+    runs-on: ${{ matrix.os }}
+    needs: lint
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node-version: [16, 18]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+      - uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+      - run: npm ci
+      - run: npm test
+      - uses: actions/upload-artifact@v3
+        if: ${{ success() }}
+        with:
+          name: test-results-${{ matrix.os }}-${{ matrix.node-version }}
+          path: test-results/
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v3
+      - run: npm ci
+      - run: npm run build
+      - name: Deploy to Production
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd /var/www/myapp
+            git pull
+            npm ci --production
+            pm2 restart myapp
+12. 调试信息输出（方便排查问题）
+name: Debug Workflow
+on:
+  push:
+    branches:
+      - main
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Debug info
+        run: |
+          echo "Event: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Workflow: ${{ github.workflow }}"
+13. 失败时自动触发 tmate 实时调试
+name: tmate Debug
+on:
+  pull_request:
+    branches:
+      - main
+jobs:
+  tmate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'pull_request' && failure() }}
+14. 环境变量和 Secrets示例
+name: Environment Variables and Secrets
+on:
+  push:
+    branches:
+      - main
+jobs:
+  env-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use environment variables
+        env:
+          NODE_ENV: production
+          API_URL: https://api.example.com
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          API_KEY: ${{ secrets.API_KEY }}
+        run: |
+          echo "Database URL: $DATABASE_URL"
+          echo "API Key: $API_KEY"
+          echo "Node.js environment: $NODE_ENV"
+          echo "API URL: $API_URL"
+15. 缓存依赖示例（加速构建）
+name: Cache Dependencies
+on:
+  push:
+    branches:
+      - main
+jobs:
+  cache-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache node modules
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-node-modules
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-build-
+            ${{ runner.os }}-
+      - name: Install Dependencies
+        run: npm ci
+16. 最小权限原则示例
+name: Minimum Permissions
+on:
+  push:
+    branches:
+      - main
+jobs:
+  permissions-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify commit signature
+        run: |
+          if ! git verify-commit ${{ github.sha }}; then
+            echo "Commit signature verification failed!"
+            exit 1
+          fi
+17. 错误处理示例
+name: Error Handling
+on:
+  push:
+    branches:
+      - main
+jobs:
+  error-handling:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Try something
+        run: ./script.sh
+        continue-on-error: true
+      - name: Check failure
+        if: ${{ failure() && steps.previous-step.conclusion == 'failure' }}
+        run: echo "Previous step failed"
+18. 自托管运行器示例
+name: Self-Hosted Runner
+on:
+  push:
+    branches:
+      - main
+jobs:
+  build:
+    runs-on: [self-hosted, linux, x64, gpu]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with self-hosted runner
+        run: |
+          echo "Building on self-hosted runner..."
+# 你的构建命令
+19. Artifacts 上传下载示例
+name: Artifacts Example
+on:
+  push:
+    branches:
+      - main
+jobs:
+  artifacts-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create artifact
+        run: echo "Hello World" > hello.txt
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: my-artifact
+          path: hello.txt
+          retention-days: 7
+      - name: Download artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: my-artifact
+20. 工作流组合示例
+name: Workflow Composition
+on:
+  push:
+    branches:
+      - main
+jobs:
+  test:
+    runs-on: ubuntu-latest
+# 测试步骤...
+  scan:
+    runs-on: ubuntu-latest
+    needs: test
+# 安全扫描步骤...
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [test, scan]
+# 部署步骤...
+21. 环境隔离示例
+name: Environment Isolation
+on:
+  push:
+    branches:
+      - main
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+# 部署到测试环境...
+  deploy-production:
+    runs-on: ubuntu-latest
+    environment: production
+    needs: deploy-staging
+# 部署到生产环境...
+22. 标签自动分类工作流
+name: Labeler
+on:
+  pull_request_target:
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/labeler@v4
+        with:
+          repo-token: "${{ secrets.GITHUB_TOKEN }}"
+23. AWS ECS 部署示例
+name: Deploy to Amazon ECS
+on:
+  push:
+    branches:
+      - main
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      ECR_REPOSITORY: MY_ECR_REPOSITORY
+      ECS_SERVICE: MY_ECS_SERVICE
+      ECS_CLUSTER: MY_ECS_CLUSTER
+      ECS_TASK_DEFINITION: MY_ECS_TASK_DEFINITION
+      CONTAINER_NAME: MY_CONTAINER_NAME
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+24. 自动化任务：Stale Issue 清理
+name: Stale Issue Cleaner
+on:
+  schedule:
+    - cron: '0
