@@ -1,0 +1,9 @@
+#!/system/bin/sh
+echo "--- LSP Magisk 终端助手 ---"
+echo "1. 清理应用缓存"
+echo "2. 重启系统"
+read -p "请输入选项: " opt
+case $opt in
+    1) rm -rf /data/cache/* && echo "清理完成";;
+    2) reboot;;
+esac

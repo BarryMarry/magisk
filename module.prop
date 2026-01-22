@@ -1,0 +1,6 @@
+id=lsp_magisk_tools
+name=LSP 极简工具箱
+version=v1.0
+versionCode=1
+author=BarryMarry
+description=一个干净的 Magisk 模块，集成基础系统优化脚本。
